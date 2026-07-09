@@ -1,0 +1,18 @@
+{
+  "name": "@sgiant/ai-agent-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@sgiant/tsconfig": "*",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,250 @@
+/**
+ * Pure-DOM UI control — the framework-agnostic primitives that let an AI point at
+ * and operate on-page controls by their stable `data-ai-target` id. No React, no
+ * framework, no build step: it runs in ANY document — the host page, a detached
+ * widget root, or (via the agent bridge) inside a framed page.
+ *
+ * This is the single source of truth for scanning targets and running actions.
+ * `@sgiant/ai-widget` re-exports it (for the local/same-origin path) and the
+ * agent bridge in this package calls it (for the framed/postMessage path).
+ *
+ * SECURITY: callers never pass a selector — only a `data-ai-target` id. The
+ * resolver below owns id→element lookup, so a controlling parent can never reach
+ * arbitrary DOM, only the ids a page opted in by tagging.
+ */
+
+/** The read-only control actions (safe, reversible — never need a confirm). */
+export const UI_CONTROL_ACTIONS = [
+  "highlight",
+  "scroll-to",
+  "focus-field",
+] as const;
+export type UiControlAction = (typeof UI_CONTROL_ACTIONS)[number];
+
+/** True when `name` is one of the read-only UI-control actions. */
+export function isUiControlAction(name: string): name is UiControlAction {
+  return (UI_CONTROL_ACTIONS as readonly string[]).includes(name);
+}
+
+/** One on-page control the AI is allowed to point at. */
+export interface AiTargetInfo {
+  id: string;
+  /** Human label (aria-label / text / placeholder) so the model picks the right one. */
+  label: string;
+}
+
+/** Escape a value for use inside a `[data-ai-target="…"]` attribute selector. */
+function attrEscape(s: string): string {
+  return s.replace(/["\\]/g, "\\$&");
+}
+
+/** Resolve a target id to its live element (null when absent/detached). */
+function resolveTarget(id: string): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const el = document.querySelector<HTMLElement>(
+    `[data-ai-target="${attrEscape(id)}"]`
+  );
+  return el && el.isConnected ? el : null;
+}
+
+/** Derive a short, human label for a target element. */
+function labelFor(el: HTMLElement): string {
+  const aria = el.getAttribute("aria-label");
+  const placeholder =
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      ? el.placeholder
+      : "";
+  const raw = (aria || el.textContent || placeholder || "").trim();
+  return raw.replace(/\s+/g, " ").slice(0, 60);
+}
+
+/**
+ * Scan the current document for AI-targetable controls (elements carrying
+ * `data-ai-target`). Returns `{id,label}[]`, deduped and capped, skipping
+ * controls the user can't see. The controlling side passes this as the catalog
+ * the model may point at — no selectors, just ids the page opted in.
+ */
+export function scanAiTargets(max = 40): AiTargetInfo[] {
+  if (typeof document === "undefined") return [];
+  const out: AiTargetInfo[] = [];
+  const seen = new Set<string>();
+  const els = document.querySelectorAll<HTMLElement>("[data-ai-target]");
+  for (const el of Array.from(els)) {
+    const id = el.getAttribute("data-ai-target");
+    if (!id || seen.has(id)) continue;
+    // Skip things the user can't see (display:none / detached) — pointing at a
+    // hidden control just confuses.
+    if (!el.isConnected || el.offsetParent === null) {
+      // offsetParent is null for position:fixed too; keep those if they have size.
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+    }
+    seen.add(id);
+    out.push({ id, label: labelFor(el) });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+const OVERLAY_ID = "sgiant-ai-ui-highlight";
+const KEYFRAMES_ID = "sgiant-ai-ui-highlight-kf";
+
+/** Inject the pulse keyframes once. */
+function ensureKeyframes(): void {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(KEYFRAMES_ID)) return;
+  const style = document.createElement("style");
+  style.id = KEYFRAMES_ID;
+  style.textContent = `@keyframes sgiant-ai-ui-pulse{
+    0%,100%{box-shadow:0 0 0 2px rgba(250,113,45,.9),0 0 0 6px rgba(250,113,45,.22)}
+    50%{box-shadow:0 0 0 2px rgba(250,113,45,1),0 0 0 10px rgba(250,113,45,.06)}
+  }`;
+  document.head.appendChild(style);
+}
+
+let clearTimer: number | undefined;
+
+/** Pulse a ring around an element for a few seconds, tracking its position on
+ *  scroll/resize, then auto-remove. Reversible and non-interactive. */
+function highlightEl(el: HTMLElement, ms = 3500): void {
+  if (typeof document === "undefined") return;
+  ensureKeyframes();
+  clearHighlight();
+  const pad = 6;
+  const ring = document.createElement("div");
+  ring.id = OVERLAY_ID;
+  ring.setAttribute("aria-hidden", "true");
+  Object.assign(ring.style, {
+    position: "fixed",
+    borderRadius: "10px",
+    pointerEvents: "none",
+    zIndex: "2147483000",
+    animation: "sgiant-ai-ui-pulse 1.1s ease-in-out infinite",
+  } as CSSStyleDeclaration);
+  const place = (): void => {
+    const r = el.getBoundingClientRect();
+    ring.style.top = `${r.top - pad}px`;
+    ring.style.left = `${r.left - pad}px`;
+    ring.style.width = `${r.width + pad * 2}px`;
+    ring.style.height = `${r.height + pad * 2}px`;
+  };
+  place();
+  document.body.appendChild(ring);
+  const onMove = (): void => place();
+  window.addEventListener("scroll", onMove, true);
+  window.addEventListener("resize", onMove);
+  const cleanup = (): void => {
+    window.removeEventListener("scroll", onMove, true);
+    window.removeEventListener("resize", onMove);
+    ring.remove();
+  };
+  // Stash cleanup on the node so clearHighlight() can call it.
+  (ring as unknown as { _cleanup: () => void })._cleanup = cleanup;
+  clearTimer = window.setTimeout(clearHighlight, ms);
+}
+
+/** Remove any active highlight ring. */
+export function clearHighlight(): void {
+  if (typeof document === "undefined") return;
+  if (clearTimer) {
+    window.clearTimeout(clearTimer);
+    clearTimer = undefined;
+  }
+  const existing = document.getElementById(OVERLAY_ID);
+  if (existing) {
+    (existing as unknown as { _cleanup?: () => void })._cleanup?.();
+    existing.remove();
+  }
+}
+
+/**
+ * Run one read-only UI-control action against a target id. Returns true when the
+ * element was found and acted on.
+ */
+export function runUiControl(
+  action: UiControlAction,
+  targetId: string
+): boolean {
+  const el = resolveTarget(targetId);
+  if (!el) return false;
+  switch (action) {
+    case "highlight":
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      highlightEl(el);
+      return true;
+    case "scroll-to":
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      return true;
+    case "focus-field":
+      el.scrollIntoView({ block: "center" });
+      el.focus?.();
+      return true;
+    default:
+      return false;
+  }
+}
+
+// --- Operate actions -----------------------------------------------------------
+// fill / click CHANGE state, so the controlling UI ALWAYS confirm-gates them
+// before dispatch (see the widget's renderAction). The id→element resolution
+// still lives here; the caller only names an id from the catalog + a value.
+
+/** State-changing UI actions the AI may request (always confirm-gated). */
+export const OPERATE_ACTIONS = ["fill", "click"] as const;
+export type OperateAction = (typeof OPERATE_ACTIONS)[number];
+
+/** True when `name` is a state-changing (confirm-required) UI action. */
+export function isOperateAction(name: string): name is OperateAction {
+  return (OPERATE_ACTIONS as readonly string[]).includes(name);
+}
+
+/** Set a React-controlled input's value so React's onChange still fires — React
+ *  tracks the value via a native setter it patches; we call the real one. */
+function setNativeValue(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string
+): void {
+  const proto =
+    el instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+  if (setter) setter.call(el, value);
+  else el.value = value;
+}
+
+/**
+ * Run one state-changing UI action against a target id. Returns true when the
+ * element was found and acted on. Callers reach this only AFTER the user
+ * confirms (the widget forces a Confirm step for operate actions). Highlights
+ * the target as it acts, so the user sees exactly what changed.
+ */
+export function runOperateAction(
+  action: OperateAction,
+  targetId: string,
+  value?: string
+): boolean {
+  const el = resolveTarget(targetId);
+  if (!el) return false;
+  switch (action) {
+    case "fill": {
+      if (
+        !(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+      )
+        return false;
+      el.scrollIntoView({ block: "center" });
+      highlightEl(el, 2200);
+      setNativeValue(el, value ?? "");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+    case "click":
+      el.scrollIntoView({ block: "center" });
+      highlightEl(el, 2200);
+      el.click();
+      return true;
+    default:
+      return false;
+  }
+}
