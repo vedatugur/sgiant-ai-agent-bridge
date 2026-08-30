@@ -9,7 +9,7 @@
  * transport only carries the on-page actions (highlight / scroll / focus / fill
  * / click) that must run inside the frame's own document.
  */
-import type { AiTargetInfo } from "./dom-control";
+import type { AiTargetInfo } from "./dom-control.js";
 import {
   BRIDGE_CHANNEL,
   BRIDGE_VERSION,
@@ -18,7 +18,7 @@ import {
   type ActMsg,
   type AgentMessage,
   type BridgeAction,
-} from "./protocol";
+} from "./protocol.js";
 
 export interface FrameTransportOptions {
   /** Origin to post commands to / accept messages from. Defaults to the current

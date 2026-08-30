@@ -14,7 +14,7 @@
  * - Origins are validated on BOTH ends (allow-lists), so a page can't be driven
  *   by an unexpected embedder and a parent won't accept spoofed results.
  */
-import type { AiTargetInfo } from "./dom-control";
+import type { AiTargetInfo } from "./dom-control.js";
 
 /** Channel tag on every message — filters out unrelated postMessage traffic. */
 export const BRIDGE_CHANNEL = "sgiant-ai-bridge";

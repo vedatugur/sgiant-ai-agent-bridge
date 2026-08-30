@@ -1,6 +1,10 @@
 {
   "extends": "@sgiant/tsconfig/base.json",
   "compilerOptions": {
+    // Emits now (#306): this package is published, so `main` points into
+    // `dist` and a `noEmit` preset would ship a manifest naming files the
+    // tarball does not carry — the @sgiant/ui@1.0.0 failure.
+    "noEmit": false,
     "outDir": "./dist",
     "rootDir": "./src",
     "lib": ["DOM", "DOM.Iterable", "ES2022"]

@@ -1,18 +1,30 @@
 {
   "name": "@sgiant/ai-agent-bridge",
   "version": "1.0.0",
-  "private": true,
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "description": "Make any web page AI-operable over postMessage — same-origin or cross-origin. Framework-agnostic, zero dependencies.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "devDependencies": {
     "@sgiant/tsconfig": "*",
     "typescript": "^5.7.2"
-  }
+  },
+  "type": "module",
+  "publishConfig": {
+    "registry": "https://gitlab.com/api/v4/projects/83055764/packages/npm/",
+    "access": "restricted"
+  },
+  "files": [
+    "dist"
+  ]
 }

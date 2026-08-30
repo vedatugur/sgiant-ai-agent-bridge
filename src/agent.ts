@@ -17,7 +17,7 @@ import {
   clearHighlight,
   isUiControlAction,
   isOperateAction,
-} from "./dom-control";
+} from "./dom-control.js";
 import {
   BRIDGE_CHANNEL,
   BRIDGE_VERSION,
@@ -26,7 +26,7 @@ import {
   originAllowed,
   type AgentMessage,
   type ParentMessage,
-} from "./protocol";
+} from "./protocol.js";
 
 export interface MountAiAgentOptions {
   /** Origins allowed to control this page. Defaults to the current origin only

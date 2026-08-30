@@ -13,7 +13,7 @@
  * The low-level DOM primitives are exported too, so a same-origin parent can
  * skip the postMessage hop and act on a frame's document directly if it wants.
  */
-export * from "./dom-control";
-export * from "./protocol";
-export * from "./agent";
-export * from "./transport";
+export * from "./dom-control.js";
+export * from "./protocol.js";
+export * from "./agent.js";
+export * from "./transport.js";
