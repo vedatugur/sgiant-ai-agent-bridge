@@ -5,7 +5,7 @@
  * widget root, or (via the agent bridge) inside a framed page.
  *
  * This is the single source of truth for scanning targets and running actions.
- * `@sgiant/ai-widget` re-exports it (for the local/same-origin path) and the
+ * `sgiant-ai-widget` re-exports it (for the local/same-origin path) and the
  * agent bridge in this package calls it (for the framed/postMessage path).
  *
  * SECURITY: callers never pass a selector — only a `data-ai-target` id. The

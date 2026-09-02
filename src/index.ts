@@ -1,5 +1,5 @@
 /**
- * @sgiant/ai-agent-bridge — make any web page AI-operable, and let an embedder
+ * sgiant-ai-agent-bridge — make any web page AI-operable, and let an embedder
  * (our AI chat widget, or your own) see and drive it.
  *
  * Two halves of one generic, framework-agnostic contract:

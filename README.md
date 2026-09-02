@@ -1,4 +1,4 @@
-# @sgiant/ai-agent-bridge
+# sgiant-ai-agent-bridge
 
 Make any web page **AI-operable**: let an assistant see the controls on a page
 and drive them — highlight, scroll, focus, fill, click — while the user watches
@@ -8,7 +8,7 @@ Zero dependencies. No React, no framework, ~730 lines of TypeScript. Works
 same-origin or cross-origin.
 
 ```bash
-npm install @sgiant/ai-agent-bridge
+npm install sgiant-ai-agent-bridge
 ```
 
 ## The idea
@@ -38,7 +38,7 @@ acted on.
 ## In the page
 
 ```js
-import { mountAiAgent } from "@sgiant/ai-agent-bridge";
+import { mountAiAgent } from "sgiant-ai-agent-bridge";
 
 mountAiAgent();
 ```
@@ -59,7 +59,7 @@ mountAiAgent({ allowedOrigins: ["https://app.example.com"] });
 ## In the parent
 
 ```js
-import { createFrameTransport } from "@sgiant/ai-agent-bridge";
+import { createFrameTransport } from "sgiant-ai-agent-bridge";
 
 const bridge = createFrameTransport(iframeEl, {
   targetOrigin: "https://site.example.com",
