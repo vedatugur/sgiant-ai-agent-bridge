@@ -38,12 +38,15 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist *.tsbuildinfo"
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "audit": "rm -rf .audit && mkdir -p .audit && npm pack --silent --pack-destination .audit >/dev/null && tar xzf .audit/*.tgz -C .audit && ./scripts/audit-tarball.sh .audit/package && rm -rf .audit",
+    "prepublishOnly": "npm run build && npm run audit"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   }
 }

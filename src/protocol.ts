@@ -16,18 +16,16 @@
  */
 import type { AiTargetInfo } from "./dom-control.js";
 
-/** Channel tag on every message — filters out unrelated postMessage traffic. */
-// NEUTRAL, because this package is going public for anyone to drive their own
-// page with (#306). A channel named after one company is a small thing that
-// tells an adopter the library is not really for them.
-//
-// This is a WIRE value: a parent and a page-side that disagree about it simply
-// never see each other's messages, since every listener filters on it before
-// BRIDGE_VERSION is ever consulted. That is a clean silence rather than a
-// corrupt exchange — the advanced pane would show no targets — and it is safe
-// to change only because both halves ship from THIS package and deploy
-// together. It stops being safe the moment a third party has a page-side
-// pinned to an older version, so it changes now or never.
+/**
+ * Channel tag on every message — filters out unrelated postMessage traffic.
+ *
+ * This is a WIRE value and part of this package's public contract. A parent and
+ * a page-side that disagree about it never see each other AT ALL: every
+ * listener filters on the channel before `BRIDGE_VERSION` is consulted, so a
+ * mismatch is silence rather than an error anything can catch — the parent
+ * simply lists no targets. Keep both halves of a deployment on versions that
+ * agree, and treat any change to it as breaking.
+ */
 export const BRIDGE_CHANNEL = "ai-agent-bridge";
 /** Protocol version — bump on any breaking shape change. */
 export const BRIDGE_VERSION = 1 as const;

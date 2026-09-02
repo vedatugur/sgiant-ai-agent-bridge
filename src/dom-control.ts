@@ -86,8 +86,10 @@ export function scanAiTargets(max = 40): AiTargetInfo[] {
   return out;
 }
 
-// Neutral ids: this package is published for anyone to embed (#306), and a
-// company name in an element another company owns is noise to them.
+// Deliberately generic ids. The overlay is injected into a page this library
+// does not own, so it must not plant a vendor name in someone else's DOM.
+// These two elements are the ONLY ones this package ever creates — if they
+// collide with something in your page, rendering is the reason.
 const OVERLAY_ID = "ai-bridge-highlight";
 const KEYFRAMES_ID = "ai-bridge-highlight-kf";
 
