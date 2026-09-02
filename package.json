@@ -39,7 +39,7 @@
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo",
-    "audit": "rm -rf .audit && mkdir -p .audit && npm pack --silent --pack-destination .audit >/dev/null && tar xzf .audit/*.tgz -C .audit && ./scripts/audit-tarball.sh .audit/package && rm -rf .audit",
+    "audit": "./scripts/audit-tarball.sh",
     "prepublishOnly": "npm run build && npm run audit"
   },
   "devDependencies": {

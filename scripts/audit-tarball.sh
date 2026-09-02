@@ -12,9 +12,32 @@
 # self-defeating, and it only ever catches what someone already thought of.
 set -euo pipefail
 
-pkg="${1:?usage: audit-tarball.sh <extracted-package-dir>}"
-
 fail() { echo "REFUSING: $*"; exit 1; }
+
+# With no argument, pack THIS package and audit what npm would actually send.
+#
+# The packing lives here rather than in the npm script because of a real bug:
+# `npm publish --dry-run` exports npm_config_dry_run=true, a nested `npm pack`
+# INHERITS it, and packs nothing. The old one-liner then ran `tar` on a glob
+# that matched no file and died with "tar: .audit/*.tgz: m: No such file or
+# directory" — so the guard silently produced no tarball in the exact lifecycle
+# it exists to protect. A check that cannot fail loudly is not a check.
+if [ $# -eq 0 ]; then
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+  # Explicitly off, so an inherited dry-run cannot make this a no-op.
+  npm_config_dry_run=false npm pack --silent --pack-destination "$work" >/dev/null
+
+  count=$(find "$work" -maxdepth 1 -name '*.tgz' | wc -l | tr -d ' ')
+  test "$count" -eq 1 || fail "npm pack produced $count tarballs, expected exactly 1"
+
+  tar xzf "$work"/*.tgz -C "$work"
+  test -d "$work/package" || fail "the tarball did not extract to package/"
+  set -- "$work/package"
+fi
+
+pkg="${1:?usage: audit-tarball.sh [extracted-package-dir]}"
+test -d "$pkg" || fail "$pkg is not a directory"
 
 # 1. Everything a package needs to be usable and lawful. A missing LICENSE is
 #    not cosmetic: published code with no licence is all rights reserved, so
