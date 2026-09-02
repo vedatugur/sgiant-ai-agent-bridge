@@ -3,6 +3,27 @@
   "version": "1.0.0",
   "description": "Make any web page AI-operable over postMessage — same-origin or cross-origin. Framework-agnostic, zero dependencies.",
   "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "postmessage",
+    "iframe",
+    "dom",
+    "automation",
+    "browser",
+    "llm",
+    "tool-use"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vedatugur/sgiant-ai-agent-bridge.git"
+  },
+  "homepage": "https://github.com/vedatugur/sgiant-ai-agent-bridge#readme",
+  "bugs": {
+    "url": "https://github.com/vedatugur/sgiant-ai-agent-bridge/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -11,21 +32,18 @@
       "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "devDependencies": {
-    "@sgiant/tsconfig": "*",
     "typescript": "^5.7.2"
   },
-  "type": "module",
   "publishConfig": {
-    "registry": "https://gitlab.com/api/v4/projects/83055764/packages/npm/",
-    "access": "restricted"
-  },
-  "files": [
-    "dist"
-  ]
+    "access": "public"
+  }
 }
