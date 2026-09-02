@@ -2,6 +2,7 @@
   "name": "@sgiant/ai-agent-bridge",
   "version": "1.0.0",
   "description": "Make any web page AI-operable over postMessage — same-origin or cross-origin. Framework-agnostic, zero dependencies.",
+  "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

@@ -86,8 +86,10 @@ export function scanAiTargets(max = 40): AiTargetInfo[] {
   return out;
 }
 
-const OVERLAY_ID = "sgiant-ai-ui-highlight";
-const KEYFRAMES_ID = "sgiant-ai-ui-highlight-kf";
+// Neutral ids: this package is published for anyone to embed (#306), and a
+// company name in an element another company owns is noise to them.
+const OVERLAY_ID = "ai-bridge-highlight";
+const KEYFRAMES_ID = "ai-bridge-highlight-kf";
 
 /** Inject the pulse keyframes once. */
 function ensureKeyframes(): void {
@@ -95,7 +97,7 @@ function ensureKeyframes(): void {
   if (document.getElementById(KEYFRAMES_ID)) return;
   const style = document.createElement("style");
   style.id = KEYFRAMES_ID;
-  style.textContent = `@keyframes sgiant-ai-ui-pulse{
+  style.textContent = `@keyframes ai-bridge-pulse{
     0%,100%{box-shadow:0 0 0 2px rgba(250,113,45,.9),0 0 0 6px rgba(250,113,45,.22)}
     50%{box-shadow:0 0 0 2px rgba(250,113,45,1),0 0 0 10px rgba(250,113,45,.06)}
   }`;
@@ -119,7 +121,7 @@ function highlightEl(el: HTMLElement, ms = 3500): void {
     borderRadius: "10px",
     pointerEvents: "none",
     zIndex: "2147483000",
-    animation: "sgiant-ai-ui-pulse 1.1s ease-in-out infinite",
+    animation: "ai-bridge-pulse 1.1s ease-in-out infinite",
   } as CSSStyleDeclaration);
   const place = (): void => {
     const r = el.getBoundingClientRect();
