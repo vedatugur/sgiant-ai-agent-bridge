@@ -22,9 +22,27 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
 
+      # TRUSTED PUBLISHING NEEDS A NEWER npm THAN NODE SHIPS.
+      #
+      # Node 22 bundles npm 10, which has no idea what OIDC is: it looks for
+      # NODE_AUTH_TOKEN, finds none, and fails ENEEDAUTH — as if the credential
+      # were missing, rather than saying the CLI is too old to exchange the
+      # one it already has. That is exactly how this failed on v1.1.0: the
+      # tarball built, the audit passed, and the publish died on auth.
+      #
+      # 11.5.1 is the first version that trades the workflow's id-token for a
+      # publish credential. Pinned, not floating: a release that changes its
+      # own toolchain silently is one that cannot be reproduced.
+      - run: npm install -g npm@11.5.1
+
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+
+      # The suite exists now, so run it. A package whose tests are not run by
+      # the thing that publishes it has tests in the same sense that an unread
+      # alert is monitoring.
+      - run: npm test
 
       # The tarball audit. `prepublishOnly` runs it again during publish, but
       # having it as its own step means a leak fails with a readable log line
@@ -42,6 +60,10 @@ jobs:
             exit 1
           }
 
+      # No NODE_AUTH_TOKEN. The credential is the workflow's own OIDC identity,
+      # exchanged by npm at publish time — there is no long-lived token in this
+      # repo's secrets to leak, rotate, or forget to set. Which is the other
+      # half of what went wrong on v1.1.0: the env named a secret that was
+      # never there, so the failure looked like a missing token rather than a
+      # design that no longer wanted one.
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
