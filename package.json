@@ -1,7 +1,7 @@
 {
   "name": "sgiant-ai-agent-bridge",
-  "version": "1.0.0",
-  "description": "Make any web page AI-operable over postMessage — same-origin or cross-origin. Framework-agnostic, zero dependencies.",
+  "version": "1.1.0",
+  "description": "Make any web page AI-operable over postMessage \u2014 same-origin or cross-origin. Framework-agnostic, zero dependencies.",
   "license": "MIT",
   "keywords": [
     "ai",
@@ -30,6 +30,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest-entry.d.ts",
+      "default": "./dist/manifest-entry.js"
     }
   },
   "files": [
@@ -40,7 +44,8 @@
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo",
     "audit": "./scripts/audit-tarball.sh",
-    "prepublishOnly": "npm run build && npm run audit"
+    "prepublishOnly": "npm run build && npm run audit",
+    "test": "npm run build && node --test \"tests/*.test.ts\""
   },
   "devDependencies": {
     "typescript": "^5.7.2"
