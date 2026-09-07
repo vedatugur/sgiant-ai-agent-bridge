@@ -11,10 +11,14 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   canAct,
+  isControlFamily,
+  isValidControlId,
+  matchesFamily,
   effectiveMutates,
   findControl,
   flattenControls,
   flattenViews,
+  flattenMedia,
   generateManifest,
   hashManifest,
   verifySurface,
@@ -89,6 +93,8 @@ function matches(el: FakeEl, sel: string): boolean {
   const exact = sel.match(/^\[data-ai-target="(.*)"\]$/);
   if (exact) return el.getAttribute("data-ai-target") === exact[1].replace(/\\(.)/g, "$1");
   if (sel === "[role=dialog]") return el.getAttribute("role") === "dialog";
+  if (["img", "video", "audio", "iframe"].includes(sel))
+    return el.tagName.toLowerCase() === sel;
   if (sel === "dialog") return el.tagName.toLowerCase() === "dialog";
   return el.tagName.toLowerCase() === sel;
 }
@@ -361,4 +367,248 @@ test("hashManifest is stable across calls and orders", () => {
   const views = OWNED.views;
   assert.equal(hashManifest(views), hashManifest(views));
   assert.notEqual(hashManifest(views), hashManifest([]));
+});
+
+/* ------------------------------------------------------------------ media */
+
+test("media is found, and every entry says it was inferred", () => {
+  const root = doc([
+    el("img", { src: "/hero.jpg", alt: "The pool at dusk", width: "1600", height: "900" }),
+    el("video", { src: "/tour.mp4", poster: "/tour.jpg" }),
+    el("iframe", { src: "https://maps.example.com/embed" }),
+  ]);
+  const { manifest } = generateManifest(root, { surface: "site", path: "/" });
+  const media = flattenMedia(manifest);
+
+  assert.deepEqual(
+    media.map((m) => m.kind),
+    ["image", "video", "embed"]
+  );
+  assert.equal(media[0].alt, "The pool at dusk");
+  assert.equal(media[0].width, 1600);
+  // Nothing here was decided by a person.
+  assert.ok(media.every((m) => m.inferred));
+});
+
+test("a reference is not perception, and the notes say so", () => {
+  const { notes } = generateManifest(doc([el("img", { src: "/a.jpg", alt: "A" })]), {
+    surface: "site",
+  });
+  // The one sentence that stops a filename becoming a description.
+  assert.ok(
+    notes.some((n) => n.includes("REFERENCES") && n.includes("not the picture")),
+    "the draft must say media entries cannot describe what an image depicts"
+  );
+});
+
+test("a missing alt is REPORTED, never invented", () => {
+  const root = doc([
+    el("img", { src: "/a.jpg" }),
+    el("img", { src: "/b.jpg" }),
+    el("img", { src: "/c.jpg", alt: "Has one" }),
+  ]);
+  const { manifest, notes } = generateManifest(root, { surface: "site" });
+  const media = flattenMedia(manifest);
+
+  // Absent, not guessed. An invented alt is wrong in the one place a
+  // screen-reader user cannot check it.
+  assert.equal(media[0].alt, undefined);
+  assert.ok(notes.some((n) => n.includes("2 image(s) have no alt text")));
+});
+
+test("dimensions are null when unknown, not zero", () => {
+  const { manifest } = generateManifest(doc([el("img", { src: "/x.jpg" })]), {
+    surface: "site",
+  });
+  const m = flattenMedia(manifest)[0];
+  assert.equal(m.width, null);
+  assert.equal(m.height, null);
+});
+
+test("an asset-library id rides along when the page declares one", () => {
+  const root = doc([
+    el("img", { src: "/logo.png", alt: "Logo", "data-asset-id": "asset-123" }),
+  ]);
+  const m = flattenMedia(generateManifest(root, { surface: "site" }).manifest)[0];
+  // This is what lets an image be reused or replaced without uploading again.
+  assert.equal(m.assetId, "asset-123");
+});
+
+test("media with no source and no declared id is skipped", () => {
+  const root = doc([el("img", { alt: "Nothing to point at" })]);
+  assert.deepEqual(
+    flattenMedia(generateManifest(root, { surface: "site" }).manifest),
+    []
+  );
+});
+
+test("a declared media id wins over the source", () => {
+  const root = doc([
+    el("img", { src: "/hero-2024-final-v3.jpg", "data-ai-media": "hero", alt: "Hero" }),
+  ]);
+  const m = flattenMedia(generateManifest(root, { surface: "site" }).manifest)[0];
+  // A stable handle survives the file being replaced; a src does not.
+  assert.equal(m.id, "hero");
+  assert.equal(m.src, "/hero-2024-final-v3.jpg");
+});
+
+test("the same source twice is one entry", () => {
+  const root = doc([
+    el("img", { src: "/logo.png", alt: "Logo" }),
+    el("img", { src: "/logo.png", alt: "Logo again" }),
+  ]);
+  assert.equal(
+    flattenMedia(generateManifest(root, { surface: "site" }).manifest).length,
+    1
+  );
+});
+
+/* --------------------------------------------------- control families */
+
+const WITH_FAMILY: SurfaceManifest = {
+  surface: "admin",
+  version: "1",
+  trust: "owned",
+  views: [
+    {
+      id: "apps",
+      title: "Apps",
+      controls: [
+        { id: "apps-search", label: "Search", mutates: false },
+        {
+          // One decision, every row.
+          id: "app-activate-:slug",
+          label: "Activate an app",
+          mutates: true,
+          severity: "reversible",
+        },
+        {
+          id: "app-purge-:slug",
+          label: "Purge an app's data",
+          mutates: true,
+          severity: "destructive",
+        },
+      ],
+    },
+  ],
+};
+
+test("an id with a param is a family; a plain one is not", () => {
+  assert.equal(isControlFamily("app-activate-:slug"), true);
+  assert.equal(isControlFamily("apps-search"), false);
+});
+
+test("one trailing param only — the rest is refused, not guessed at", () => {
+  assert.equal(isValidControlId("app-activate-:slug"), true);
+  assert.equal(isValidControlId("apps-search"), true);
+  // Two params leave nothing to decide where the first one ends.
+  assert.equal(isValidControlId("a-:x-:y"), false);
+  // A bare param would match every id on the page.
+  assert.equal(isValidControlId(":slug"), false);
+  assert.equal(isValidControlId("app-activate-:"), false);
+});
+
+test("a family matches a row key that contains dashes", () => {
+  // The real case: `google-business-profile` is one slug, not three segments.
+  assert.equal(
+    matchesFamily("app-activate-:slug", "app-activate-google-business-profile"),
+    true
+  );
+  assert.equal(matchesFamily("app-activate-:slug", "app-activate-instagram"), true);
+  // And it does not swallow a different control that shares a prefix start.
+  assert.equal(matchesFamily("app-activate-:slug", "app-purge-instagram"), false);
+  // The bare prefix is not a member: there is no row called "".
+  assert.equal(matchesFamily("app-activate-:slug", "app-activate-"), false);
+});
+
+test("a row id inherits the family's decision", () => {
+  const c = findControl(WITH_FAMILY, "app-purge-instagram")!;
+  assert.equal(c.label, "Purge an app's data");
+  assert.equal(c.severity, "destructive");
+  // Which is the point: "purge this row" is the same act whichever row it is,
+  // and nobody has to decide it per row.
+  assert.equal(effectiveMutates(WITH_FAMILY, "app-purge-instagram"), true);
+});
+
+test("a literal beats a family it would otherwise fall inside", () => {
+  const m: SurfaceManifest = {
+    ...WITH_FAMILY,
+    views: [
+      {
+        id: "apps",
+        title: "Apps",
+        controls: [
+          { id: "app-activate-:slug", label: "Activate", mutates: true },
+          // One app that needed describing on its own terms.
+          {
+            id: "app-activate-legacy",
+            label: "Activate the legacy importer",
+            mutates: true,
+            severity: "destructive",
+          },
+        ],
+      },
+    ],
+  };
+  assert.equal(findControl(m, "app-activate-legacy")!.severity, "destructive");
+  assert.equal(findControl(m, "app-activate-instagram")!.severity, undefined);
+});
+
+test("A FAMILY WITH NO ROWS IS NOT DRIFT", () => {
+  // An account with no connected apps renders no per-app buttons. Reporting
+  // that would fire on every healthy empty page.
+  const empty = doc([el("input", { "data-ai-target": "apps-search" })]);
+  assert.deepEqual(verifySurface(WITH_FAMILY, empty), []);
+});
+
+test("but a missing LITERAL still is", () => {
+  assert.deepEqual(
+    verifySurface(WITH_FAMILY, doc([])).map((d) => `${d.kind}:${d.id}`),
+    ["missing:apps-search"]
+  );
+});
+
+test("rows are not reported as undeclared", () => {
+  const page = doc([
+    el("input", { "data-ai-target": "apps-search" }),
+    el("button", { "data-ai-target": "app-activate-instagram" }),
+    el("button", { "data-ai-target": "app-purge-instagram" }),
+    el("button", { "data-ai-target": "app-activate-sabee" }),
+  ]);
+  // Without family matching, every one of these would report undeclared and
+  // the report would be noise.
+  assert.deepEqual(verifySurface(WITH_FAMILY, page), []);
+});
+
+test("something outside every family is still undeclared", () => {
+  const page = doc([
+    el("input", { "data-ai-target": "apps-search" }),
+    el("button", { "data-ai-target": "totally-unrelated" }),
+  ]);
+  assert.deepEqual(
+    verifySurface(WITH_FAMILY, page).map((d) => `${d.kind}:${d.id}`),
+    ["undeclared:totally-unrelated"]
+  );
+});
+
+test("acting on the family NAME is refused — it is not a row", () => {
+  const page = doc([el("button", { "data-ai-target": "app-purge-instagram" })]);
+  const d = canAct(WITH_FAMILY, "app-purge-:slug", page);
+  assert.equal(d.ok, false);
+  // Picking a row for the user is the one thing a per-row control must not do.
+  assert.match(d.reason!, /names a family|say which row/i);
+});
+
+test("acting on a real row works, and carries the family's gate", () => {
+  const page = doc([
+    el("button", { "data-ai-target": "app-purge-instagram" }),
+    el("button", { "data-ai-target": "app-activate-instagram" }),
+  ]);
+  const purge = canAct(WITH_FAMILY, "app-purge-instagram", page);
+  assert.equal(purge.ok, true);
+  assert.equal(purge.needsConfirm, true);
+  // And a row that is not on the page is still refused, family or not.
+  const absent = canAct(WITH_FAMILY, "app-purge-sabee", page);
+  assert.equal(absent.ok, false);
+  assert.match(absent.reason!, /not actually here|not available to you/);
 });

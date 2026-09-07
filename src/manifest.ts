@@ -54,10 +54,75 @@ export type ControlKind =
   | "toggle"
   | "other";
 
+/**
+ * WHAT KIND OF THING IS ON THE PAGE. Not what it depicts.
+ */
+export type MediaKind = "image" | "video" | "audio" | "embed";
+
+/**
+ * ONE PIECE OF MEDIA ON A SURFACE — A REFERENCE, NOT PERCEPTION.
+ *
+ * This is the distinction the whole type hangs on, and getting it wrong is
+ * worse than having no media at all.
+ *
+ * An assistant holding this entry knows that an image EXISTS, where it sits,
+ * what the page's own alt text calls it, and how big it is. It can therefore
+ * name it, swap it, reuse it, or point a person at it. It CANNOT see it. A
+ * filename and an alt string are not the picture, and treating them as one is
+ * how an assistant ends up confidently describing a photograph nobody showed
+ * it — the same failure as narrating a page's data from its structure.
+ *
+ * `alt` is the page's own words about the image, written by a person for a
+ * screen reader. It is evidence of intent, and often wrong or empty. Repeating
+ * it as a description is quoting; inventing beyond it is not.
+ *
+ * Looking at an image is a separate capability with its own cost and its own
+ * consent, and nothing here grants it.
+ */
+export interface ManifestMedia {
+  /** Stable handle. A declared id where one exists, otherwise the source. */
+  id: string;
+  kind: MediaKind;
+  /** Where it comes from. May be relative, and may be a temporary URL. */
+  src?: string;
+  /** The alt text the PAGE carries. Absent means the page gave none — worth
+   *  saying out loud, since that is an accessibility gap as well as a gap in
+   *  what anything can know about the image. */
+  alt?: string;
+  /** Intrinsic size where the page declares it. Null when unknown, which is
+   *  not the same as zero. */
+  width?: number | null;
+  height?: number | null;
+  /** Set when this came from an asset library, so it can be reused or
+   *  replaced without uploading it again. */
+  assetId?: string;
+  /** True when nothing decided this — a DOM walk found it. */
+  inferred?: boolean;
+}
+
 /** One control the assistant may point at or operate. */
 export interface ManifestControl {
-  /** The `data-ai-target` id. Never a selector: the resolver owns id→element,
-   *  so a controlling parent can only ever reach what a page opted in. */
+  /**
+   * The `data-ai-target` id. Never a selector: the resolver owns id→element,
+   * so a controlling parent can only ever reach what a page opted in.
+   *
+   * AN ID CONTAINING `:name` DESCRIBES A FAMILY, not one element. A table with
+   * a delete button per row renders `delete-row-a1`, `delete-row-b2`, and so
+   * on; declaring any one of those describes a page that only exists while
+   * that row does, and declaring a base id nothing carries makes verification
+   * report it missing on every page.
+   *
+   *     id: "app-activate-:slug"     matches app-activate-instagram
+   *
+   * The `:name` convention is deliberately the one the page manifest already
+   * uses for route params — one vocabulary, one level down.
+   *
+   * AT MOST ONE PARAM, AND IT MUST BE LAST. A row key is the only thing that
+   * varies in practice, and a single trailing param keeps matching
+   * unambiguous: `app-activate-:slug` matches `app-activate-google-business`
+   * whole, without anyone having to decide where a dash-separated slug ends.
+   * `isValidControlId` refuses anything else rather than matching it wrongly.
+   */
   id: string;
   /** Human label, so the model picks the right one. */
   label: string;
@@ -101,6 +166,9 @@ export interface ManifestView {
   /** Areas on it, for describing structure. */
   sections?: string[];
   controls?: ManifestControl[];
+  /** Pictures, video and embeds on this view. References only — see
+   *  `ManifestMedia`, which explains at length why that word matters. */
+  media?: ManifestMedia[];
   /** Nested states: a dialog within a page, a tab within a dialog. */
   views?: ManifestView[];
   /** Page-aware starter questions, as today's manifest carries. */
@@ -141,6 +209,38 @@ export function flattenViews(manifest: SurfaceManifest): ManifestView[] {
   return out;
 }
 
+/** True when this id describes a FAMILY of controls rather than one element. */
+export function isControlFamily(id: string): boolean {
+  return id.includes(":");
+}
+
+/**
+ * Is this id well-formed? A family may carry ONE param, and it must be last.
+ *
+ * Refusing the rest is not a limitation being apologised for. Two params make
+ * `a-:x-:y` ambiguous against `a-b-c-d` — nothing decides where `x` ends — and
+ * a middle param needs a rule about separators that a slug like
+ * `google-business-profile` immediately breaks. One trailing param covers
+ * every real case and needs no such rule.
+ */
+export function isValidControlId(id: string): boolean {
+  if (!id) return false;
+  const parts = id.split(":");
+  if (parts.length === 1) return true;
+  if (parts.length > 2) return false;
+  // Something must precede the param, and the param must not be empty: a bare
+  // ":x" would match every id on the page.
+  return parts[0].length > 0 && /^[A-Za-z0-9_-]+$/.test(parts[1]);
+}
+
+/** Does this concrete id belong to that family? */
+export function matchesFamily(family: string, id: string): boolean {
+  if (!isControlFamily(family)) return family === id;
+  const prefix = family.slice(0, family.indexOf(":"));
+  // The param takes the REST, so a dash-separated row key stays whole.
+  return id.length > prefix.length && id.startsWith(prefix);
+}
+
 /** Every control in the surface, in view order. */
 export function flattenControls(
   manifest: SurfaceManifest
@@ -152,12 +252,28 @@ export function flattenControls(
   return out;
 }
 
+/** Every piece of media on the surface, in view order. */
+export function flattenMedia(
+  manifest: SurfaceManifest
+): Array<ManifestMedia & { viewId: string }> {
+  const out: Array<ManifestMedia & { viewId: string }> = [];
+  for (const v of flattenViews(manifest))
+    for (const m of v.media ?? []) out.push({ ...m, viewId: v.id });
+  return out;
+}
+
 /** Find one control by id, wherever it sits in the tree. */
 export function findControl(
   manifest: SurfaceManifest,
   id: string
 ): ManifestControl | undefined {
-  return flattenControls(manifest).find((c) => c.id === id);
+  const all = flattenControls(manifest);
+  // A literal always wins over a family it happens to sit inside, so a row
+  // that needed describing on its own still can be.
+  return (
+    all.find((c) => c.id === id) ??
+    all.find((c) => isControlFamily(c.id) && matchesFamily(c.id, id))
+  );
 }
 
 /**
@@ -176,6 +292,10 @@ export function effectiveMutates(
   manifest: SurfaceManifest,
   controlId: string
 ): boolean {
+  // A concrete row id resolves through `findControl` to its family, so every
+  // row inherits the one decision a person made about that control. Deciding
+  // it per row is not possible and would not be wanted: "delete this row" is
+  // the same act whichever row it is.
   const control = findControl(manifest, controlId);
   if (!control) return true;
   if (control.mutates) return true;
@@ -238,9 +358,23 @@ export function verifySurface(
 ): ManifestDrift[] {
   const drift: ManifestDrift[] = [];
   const declared = flattenControls(manifest);
-  const declaredIds = new Set(declared.map((c) => c.id));
+  const literals = new Set(
+    declared.filter((c) => !isControlFamily(c.id)).map((c) => c.id)
+  );
+  const families = declared.filter((c) => isControlFamily(c.id));
 
   for (const c of declared) {
+    // A FAMILY WITH NO ROWS IS NOT MISSING, and this is the whole reason
+    // families needed their own handling. An account with no connected apps
+    // renders no per-app buttons; reporting that as drift would fire on every
+    // healthy empty page, and a drift report that cries wolf stops being read.
+    //
+    // What IS lost: a genuinely wrong pattern looks identical to an empty
+    // list, and nothing here can tell them apart. That is a real gap, and it
+    // is a better one than the alternative — a verifier wrong about every
+    // page beats one wrong about a mistake nobody has made yet.
+    if (isControlFamily(c.id)) continue;
+
     const el = root.querySelector(`[data-ai-target="${attrEscape(c.id)}"]`);
     if (!el) {
       drift.push({
@@ -261,7 +395,10 @@ export function verifySurface(
 
   for (const el of Array.from(root.querySelectorAll("[data-ai-target]"))) {
     const id = el.getAttribute("data-ai-target");
-    if (!id || declaredIds.has(id)) continue;
+    if (!id || literals.has(id)) continue;
+    // An id belonging to a declared family is declared. Without this, every
+    // row on a page would report as undeclared.
+    if (families.some((f) => matchesFamily(f.id, id))) continue;
     drift.push({
       kind: "undeclared",
       id,
@@ -290,6 +427,17 @@ export function canAct(
   controlId: string,
   root: ManifestRoot
 ): ActDecision {
+  // A FAMILY NAME IS NOT AN ELEMENT. "app-activate-:slug" describes a shape;
+  // nothing in the page carries it. Acting on it would mean picking a row for
+  // the user, which is the one thing a per-row control must not do silently.
+  if (isControlFamily(controlId)) {
+    return {
+      ok: false,
+      needsConfirm: true,
+      reason: `"${controlId}" names a family of controls, not one of them — say which row you mean and use that control's own id.`,
+    };
+  }
+
   const control = findControl(manifest, controlId);
   if (!control) {
     return {
