@@ -27,6 +27,8 @@
 import {
   MANIFEST_VERSION,
   type ControlKind,
+  type ManifestMedia,
+  type MediaKind,
   type ManifestControl,
   type ManifestView,
   type SurfaceManifest,
@@ -156,6 +158,71 @@ function controlsIn(
   return out;
 }
 
+/**
+ * Find the media on a surface — as REFERENCES.
+ *
+ * The walk can see that an image is there and what the page calls it. It can
+ * never see what the image depicts, and every entry is marked `inferred` so
+ * nothing downstream mistakes a filename for a description.
+ *
+ * A missing `alt` is reported as missing rather than filled in with something
+ * plausible. An invented alt is worse than none: it is wrong in the one place
+ * a screen-reader user cannot check it, and it teaches the assistant that it
+ * knows what the picture shows.
+ */
+function mediaIn(root: GenRoot, max: number, notes: string[]): ManifestMedia[] {
+  const out: ManifestMedia[] = [];
+  const seen = new Set<string>();
+  const kinds: Array<[string, MediaKind]> = [
+    ["img", "image"],
+    ["video", "video"],
+    ["audio", "audio"],
+    ["iframe", "embed"],
+  ];
+  let missingAlt = 0;
+
+  for (const [selector, kind] of kinds) {
+    for (const el of Array.from(root.querySelectorAll(selector))) {
+      if (out.length >= max) break;
+      const src =
+        el.getAttribute("src") ||
+        el.getAttribute("data-src") ||
+        el.getAttribute("poster") ||
+        "";
+      const id = el.getAttribute("data-ai-media") || src;
+      // No src and no declared id is not addressable by anything, so it would
+      // be an entry nobody could act on.
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+
+      const alt = el.getAttribute("alt");
+      if (kind === "image" && !alt) missingAlt++;
+
+      const w = Number(el.getAttribute("width"));
+      const h = Number(el.getAttribute("height"));
+      out.push({
+        id,
+        kind,
+        ...(src ? { src } : {}),
+        ...(alt ? { alt } : {}),
+        width: Number.isFinite(w) && w > 0 ? w : null,
+        height: Number.isFinite(h) && h > 0 ? h : null,
+        ...(el.getAttribute("data-asset-id")
+          ? { assetId: el.getAttribute("data-asset-id") as string }
+          : {}),
+        inferred: true,
+      });
+    }
+  }
+
+  if (missingAlt)
+    notes.push(
+      `${missingAlt} image(s) have no alt text. Nothing — assistant or screen reader — can tell what they show, and a generated description would be a guess presented as a fact.`
+    );
+
+  return out;
+}
+
 function sectionsIn(root: GenRoot): string[] {
   const out: string[] = [];
   for (const el of Array.from(root.querySelectorAll("h1, h2, h3"))) {
@@ -213,11 +280,15 @@ export function generateManifest(
     ...(options.path ? { path: options.path } : {}),
     sections: sectionsIn(root),
     controls: pageControls,
+    media: mediaIn(root, max, notes),
     ...(dialogViews.length ? { views: dialogViews } : {}),
   };
 
   notes.push(
     "Generated, not decided: every control is marked mutates:true because a DOM walk cannot tell a filter tab from a delete button. Review and relax what is safe."
+  );
+  notes.push(
+    "Media entries are REFERENCES. They say an image is there and what the page calls it; they are not the picture, and nothing here can describe what one depicts."
   );
 
   return {

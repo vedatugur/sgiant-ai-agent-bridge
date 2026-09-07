@@ -54,6 +54,52 @@ export type ControlKind =
   | "toggle"
   | "other";
 
+/**
+ * WHAT KIND OF THING IS ON THE PAGE. Not what it depicts.
+ */
+export type MediaKind = "image" | "video" | "audio" | "embed";
+
+/**
+ * ONE PIECE OF MEDIA ON A SURFACE — A REFERENCE, NOT PERCEPTION.
+ *
+ * This is the distinction the whole type hangs on, and getting it wrong is
+ * worse than having no media at all.
+ *
+ * An assistant holding this entry knows that an image EXISTS, where it sits,
+ * what the page's own alt text calls it, and how big it is. It can therefore
+ * name it, swap it, reuse it, or point a person at it. It CANNOT see it. A
+ * filename and an alt string are not the picture, and treating them as one is
+ * how an assistant ends up confidently describing a photograph nobody showed
+ * it — the same failure as narrating a page's data from its structure.
+ *
+ * `alt` is the page's own words about the image, written by a person for a
+ * screen reader. It is evidence of intent, and often wrong or empty. Repeating
+ * it as a description is quoting; inventing beyond it is not.
+ *
+ * Looking at an image is a separate capability with its own cost and its own
+ * consent, and nothing here grants it.
+ */
+export interface ManifestMedia {
+  /** Stable handle. A declared id where one exists, otherwise the source. */
+  id: string;
+  kind: MediaKind;
+  /** Where it comes from. May be relative, and may be a temporary URL. */
+  src?: string;
+  /** The alt text the PAGE carries. Absent means the page gave none — worth
+   *  saying out loud, since that is an accessibility gap as well as a gap in
+   *  what anything can know about the image. */
+  alt?: string;
+  /** Intrinsic size where the page declares it. Null when unknown, which is
+   *  not the same as zero. */
+  width?: number | null;
+  height?: number | null;
+  /** Set when this came from an asset library, so it can be reused or
+   *  replaced without uploading it again. */
+  assetId?: string;
+  /** True when nothing decided this — a DOM walk found it. */
+  inferred?: boolean;
+}
+
 /** One control the assistant may point at or operate. */
 export interface ManifestControl {
   /** The `data-ai-target` id. Never a selector: the resolver owns id→element,
@@ -101,6 +147,9 @@ export interface ManifestView {
   /** Areas on it, for describing structure. */
   sections?: string[];
   controls?: ManifestControl[];
+  /** Pictures, video and embeds on this view. References only — see
+   *  `ManifestMedia`, which explains at length why that word matters. */
+  media?: ManifestMedia[];
   /** Nested states: a dialog within a page, a tab within a dialog. */
   views?: ManifestView[];
   /** Page-aware starter questions, as today's manifest carries. */
@@ -149,6 +198,16 @@ export function flattenControls(
   for (const v of flattenViews(manifest)) {
     for (const c of v.controls ?? []) out.push({ ...c, viewId: v.id });
   }
+  return out;
+}
+
+/** Every piece of media on the surface, in view order. */
+export function flattenMedia(
+  manifest: SurfaceManifest
+): Array<ManifestMedia & { viewId: string }> {
+  const out: Array<ManifestMedia & { viewId: string }> = [];
+  for (const v of flattenViews(manifest))
+    for (const m of v.media ?? []) out.push({ ...m, viewId: v.id });
   return out;
 }
 

@@ -15,6 +15,7 @@ import {
   findControl,
   flattenControls,
   flattenViews,
+  flattenMedia,
   generateManifest,
   hashManifest,
   verifySurface,
@@ -89,6 +90,8 @@ function matches(el: FakeEl, sel: string): boolean {
   const exact = sel.match(/^\[data-ai-target="(.*)"\]$/);
   if (exact) return el.getAttribute("data-ai-target") === exact[1].replace(/\\(.)/g, "$1");
   if (sel === "[role=dialog]") return el.getAttribute("role") === "dialog";
+  if (["img", "video", "audio", "iframe"].includes(sel))
+    return el.tagName.toLowerCase() === sel;
   if (sel === "dialog") return el.tagName.toLowerCase() === "dialog";
   return el.tagName.toLowerCase() === sel;
 }
@@ -361,4 +364,98 @@ test("hashManifest is stable across calls and orders", () => {
   const views = OWNED.views;
   assert.equal(hashManifest(views), hashManifest(views));
   assert.notEqual(hashManifest(views), hashManifest([]));
+});
+
+/* ------------------------------------------------------------------ media */
+
+test("media is found, and every entry says it was inferred", () => {
+  const root = doc([
+    el("img", { src: "/hero.jpg", alt: "The pool at dusk", width: "1600", height: "900" }),
+    el("video", { src: "/tour.mp4", poster: "/tour.jpg" }),
+    el("iframe", { src: "https://maps.example.com/embed" }),
+  ]);
+  const { manifest } = generateManifest(root, { surface: "site", path: "/" });
+  const media = flattenMedia(manifest);
+
+  assert.deepEqual(
+    media.map((m) => m.kind),
+    ["image", "video", "embed"]
+  );
+  assert.equal(media[0].alt, "The pool at dusk");
+  assert.equal(media[0].width, 1600);
+  // Nothing here was decided by a person.
+  assert.ok(media.every((m) => m.inferred));
+});
+
+test("a reference is not perception, and the notes say so", () => {
+  const { notes } = generateManifest(doc([el("img", { src: "/a.jpg", alt: "A" })]), {
+    surface: "site",
+  });
+  // The one sentence that stops a filename becoming a description.
+  assert.ok(
+    notes.some((n) => n.includes("REFERENCES") && n.includes("not the picture")),
+    "the draft must say media entries cannot describe what an image depicts"
+  );
+});
+
+test("a missing alt is REPORTED, never invented", () => {
+  const root = doc([
+    el("img", { src: "/a.jpg" }),
+    el("img", { src: "/b.jpg" }),
+    el("img", { src: "/c.jpg", alt: "Has one" }),
+  ]);
+  const { manifest, notes } = generateManifest(root, { surface: "site" });
+  const media = flattenMedia(manifest);
+
+  // Absent, not guessed. An invented alt is wrong in the one place a
+  // screen-reader user cannot check it.
+  assert.equal(media[0].alt, undefined);
+  assert.ok(notes.some((n) => n.includes("2 image(s) have no alt text")));
+});
+
+test("dimensions are null when unknown, not zero", () => {
+  const { manifest } = generateManifest(doc([el("img", { src: "/x.jpg" })]), {
+    surface: "site",
+  });
+  const m = flattenMedia(manifest)[0];
+  assert.equal(m.width, null);
+  assert.equal(m.height, null);
+});
+
+test("an asset-library id rides along when the page declares one", () => {
+  const root = doc([
+    el("img", { src: "/logo.png", alt: "Logo", "data-asset-id": "asset-123" }),
+  ]);
+  const m = flattenMedia(generateManifest(root, { surface: "site" }).manifest)[0];
+  // This is what lets an image be reused or replaced without uploading again.
+  assert.equal(m.assetId, "asset-123");
+});
+
+test("media with no source and no declared id is skipped", () => {
+  const root = doc([el("img", { alt: "Nothing to point at" })]);
+  assert.deepEqual(
+    flattenMedia(generateManifest(root, { surface: "site" }).manifest),
+    []
+  );
+});
+
+test("a declared media id wins over the source", () => {
+  const root = doc([
+    el("img", { src: "/hero-2024-final-v3.jpg", "data-ai-media": "hero", alt: "Hero" }),
+  ]);
+  const m = flattenMedia(generateManifest(root, { surface: "site" }).manifest)[0];
+  // A stable handle survives the file being replaced; a src does not.
+  assert.equal(m.id, "hero");
+  assert.equal(m.src, "/hero-2024-final-v3.jpg");
+});
+
+test("the same source twice is one entry", () => {
+  const root = doc([
+    el("img", { src: "/logo.png", alt: "Logo" }),
+    el("img", { src: "/logo.png", alt: "Logo again" }),
+  ]);
+  assert.equal(
+    flattenMedia(generateManifest(root, { surface: "site" }).manifest).length,
+    1
+  );
 });
