@@ -612,3 +612,57 @@ test("acting on a real row works, and carries the family's gate", () => {
   assert.equal(absent.ok, false);
   assert.match(absent.reason!, /not actually here|not available to you/);
 });
+
+test("severity has a word for 'takes nothing away, cannot be taken back'", () => {
+  // Declaring a real backoffice found a control that was neither: sending a
+  // notification. It removes nothing, so `destructive` is wrong; it cannot be
+  // unsent, so `reversible` is a lie about the one property that decides how
+  // carefully to treat it. It was marked `destructive` because that was the
+  // SAFE error — and it was still an error, telling a reader something is
+  // removed when nothing is.
+  const control: ManifestControl = {
+    id: "send",
+    label: "Send the notification",
+    purpose: "Delivers it to real people. It CANNOT be unsent.",
+    mutates: true,
+    severity: "irreversible",
+  };
+  assert.equal(control.severity, "irreversible");
+
+  // The point is that the three need DIFFERENT SENTENCES. "This cannot be
+  // undone" is not the same warning as "this deletes X", and a person deciding
+  // whether to press needs the true one.
+  const kinds: ManifestControl["severity"][] = [
+    "reversible",
+    "irreversible",
+    "destructive",
+  ];
+  assert.equal(new Set(kinds).size, 3);
+});
+
+test("adding the word did not change what needs a confirmation", () => {
+  // `effectiveMutates` asks whether a control changes anything, not how badly.
+  // A severity is a description of the change, never a licence to skip the
+  // gate — an irreversible control mutates exactly as much as a reversible one.
+  const m: SurfaceManifest = {
+    surface: "s",
+    version: "1",
+    trust: "owned",
+    views: [
+      {
+        id: "v",
+        title: "v",
+        controls: [
+          { id: "a", label: "a", mutates: true, severity: "reversible" },
+          { id: "b", label: "b", mutates: true, severity: "irreversible" },
+          { id: "c", label: "c", mutates: true, severity: "destructive" },
+          { id: "d", label: "d", mutates: false },
+        ],
+      },
+    ],
+  };
+  assert.equal(effectiveMutates(m, "a"), true);
+  assert.equal(effectiveMutates(m, "b"), true);
+  assert.equal(effectiveMutates(m, "c"), true);
+  assert.equal(effectiveMutates(m, "d"), false);
+});

@@ -138,10 +138,33 @@ export interface ManifestControl {
    * destructive control reached by any other means.
    */
   mutates: boolean;
-  /** Only meaningful when `mutates`. `destructive` means the user cannot
-   *  simply do it again backwards — the difference between renaming a report
-   *  and deleting one. */
-  severity?: "reversible" | "destructive";
+  /**
+   * Only meaningful when `mutates`. THREE WORDS, and the third exists because
+   * two could not describe a control that was found while declaring a real
+   * backoffice.
+   *
+   *   reversible     do it again backwards. Renaming a report.
+   *   irreversible   TAKES NOTHING AWAY, and cannot be taken back. Sending a
+   *                  notification to real people; creating a share link that
+   *                  someone has now opened.
+   *   destructive    REMOVES something. Deleting a report, purging ingested
+   *                  data, cancelling a subscription.
+   *
+   * The distinction is not severity in the sense of "how bad" — it is WHAT
+   * KIND of bad, and the two need different sentences. "This cannot be undone"
+   * is a different warning from "this deletes X", and a person deciding
+   * whether to press the button needs the true one.
+   *
+   * Sending a notification was marked `destructive` before this word existed,
+   * because the alternative — `reversible` — was a lie about the one property
+   * that decides how carefully it should be treated. `destructive` was the
+   * safe error, and it was still an error: it tells a reader something is
+   * being removed when nothing is.
+   *
+   * The common thread of `irreversible` is that THE EFFECT LEAVES OUR SYSTEM,
+   * so "undo" stops being a property we control at all.
+   */
+  severity?: "reversible" | "irreversible" | "destructive";
   /** True when nothing decided this — the generator inferred it. A human
    *  reviewing a draft looks here first. */
   inferred?: boolean;
