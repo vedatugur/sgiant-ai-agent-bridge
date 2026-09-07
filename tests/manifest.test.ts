@@ -11,6 +11,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   canAct,
+  isControlFamily,
+  isValidControlId,
+  matchesFamily,
   effectiveMutates,
   findControl,
   flattenControls,
@@ -458,4 +461,154 @@ test("the same source twice is one entry", () => {
     flattenMedia(generateManifest(root, { surface: "site" }).manifest).length,
     1
   );
+});
+
+/* --------------------------------------------------- control families */
+
+const WITH_FAMILY: SurfaceManifest = {
+  surface: "admin",
+  version: "1",
+  trust: "owned",
+  views: [
+    {
+      id: "apps",
+      title: "Apps",
+      controls: [
+        { id: "apps-search", label: "Search", mutates: false },
+        {
+          // One decision, every row.
+          id: "app-activate-:slug",
+          label: "Activate an app",
+          mutates: true,
+          severity: "reversible",
+        },
+        {
+          id: "app-purge-:slug",
+          label: "Purge an app's data",
+          mutates: true,
+          severity: "destructive",
+        },
+      ],
+    },
+  ],
+};
+
+test("an id with a param is a family; a plain one is not", () => {
+  assert.equal(isControlFamily("app-activate-:slug"), true);
+  assert.equal(isControlFamily("apps-search"), false);
+});
+
+test("one trailing param only — the rest is refused, not guessed at", () => {
+  assert.equal(isValidControlId("app-activate-:slug"), true);
+  assert.equal(isValidControlId("apps-search"), true);
+  // Two params leave nothing to decide where the first one ends.
+  assert.equal(isValidControlId("a-:x-:y"), false);
+  // A bare param would match every id on the page.
+  assert.equal(isValidControlId(":slug"), false);
+  assert.equal(isValidControlId("app-activate-:"), false);
+});
+
+test("a family matches a row key that contains dashes", () => {
+  // The real case: `google-business-profile` is one slug, not three segments.
+  assert.equal(
+    matchesFamily("app-activate-:slug", "app-activate-google-business-profile"),
+    true
+  );
+  assert.equal(matchesFamily("app-activate-:slug", "app-activate-instagram"), true);
+  // And it does not swallow a different control that shares a prefix start.
+  assert.equal(matchesFamily("app-activate-:slug", "app-purge-instagram"), false);
+  // The bare prefix is not a member: there is no row called "".
+  assert.equal(matchesFamily("app-activate-:slug", "app-activate-"), false);
+});
+
+test("a row id inherits the family's decision", () => {
+  const c = findControl(WITH_FAMILY, "app-purge-instagram")!;
+  assert.equal(c.label, "Purge an app's data");
+  assert.equal(c.severity, "destructive");
+  // Which is the point: "purge this row" is the same act whichever row it is,
+  // and nobody has to decide it per row.
+  assert.equal(effectiveMutates(WITH_FAMILY, "app-purge-instagram"), true);
+});
+
+test("a literal beats a family it would otherwise fall inside", () => {
+  const m: SurfaceManifest = {
+    ...WITH_FAMILY,
+    views: [
+      {
+        id: "apps",
+        title: "Apps",
+        controls: [
+          { id: "app-activate-:slug", label: "Activate", mutates: true },
+          // One app that needed describing on its own terms.
+          {
+            id: "app-activate-legacy",
+            label: "Activate the legacy importer",
+            mutates: true,
+            severity: "destructive",
+          },
+        ],
+      },
+    ],
+  };
+  assert.equal(findControl(m, "app-activate-legacy")!.severity, "destructive");
+  assert.equal(findControl(m, "app-activate-instagram")!.severity, undefined);
+});
+
+test("A FAMILY WITH NO ROWS IS NOT DRIFT", () => {
+  // An account with no connected apps renders no per-app buttons. Reporting
+  // that would fire on every healthy empty page.
+  const empty = doc([el("input", { "data-ai-target": "apps-search" })]);
+  assert.deepEqual(verifySurface(WITH_FAMILY, empty), []);
+});
+
+test("but a missing LITERAL still is", () => {
+  assert.deepEqual(
+    verifySurface(WITH_FAMILY, doc([])).map((d) => `${d.kind}:${d.id}`),
+    ["missing:apps-search"]
+  );
+});
+
+test("rows are not reported as undeclared", () => {
+  const page = doc([
+    el("input", { "data-ai-target": "apps-search" }),
+    el("button", { "data-ai-target": "app-activate-instagram" }),
+    el("button", { "data-ai-target": "app-purge-instagram" }),
+    el("button", { "data-ai-target": "app-activate-sabee" }),
+  ]);
+  // Without family matching, every one of these would report undeclared and
+  // the report would be noise.
+  assert.deepEqual(verifySurface(WITH_FAMILY, page), []);
+});
+
+test("something outside every family is still undeclared", () => {
+  const page = doc([
+    el("input", { "data-ai-target": "apps-search" }),
+    el("button", { "data-ai-target": "totally-unrelated" }),
+  ]);
+  assert.deepEqual(
+    verifySurface(WITH_FAMILY, page).map((d) => `${d.kind}:${d.id}`),
+    ["undeclared:totally-unrelated"]
+  );
+});
+
+test("acting on the family NAME is refused — it is not a row", () => {
+  const page = doc([el("button", { "data-ai-target": "app-purge-instagram" })]);
+  const d = canAct(WITH_FAMILY, "app-purge-:slug", page);
+  assert.equal(d.ok, false);
+  // Picking a row for the user is the one thing a per-row control must not do.
+  assert.match(d.reason!, /names a family|say which row/i);
+});
+
+test("acting on a real row works, and carries the family's gate", () => {
+  const page = doc([
+    el("button", { "data-ai-target": "app-purge-instagram" }),
+    el("button", { "data-ai-target": "app-activate-instagram" }),
+  ]);
+  const purge = canAct(WITH_FAMILY, "app-purge-instagram", page);
+  assert.equal(purge.ok, true);
+  assert.equal(purge.needsConfirm, true);
+  // And a row that is not on the page is still refused, family or not.
+  const absent = canAct(WITH_FAMILY, "app-purge-sabee", page);
+  assert.equal(absent.ok, false);
+  assert.match(absent.reason!, /not actually here|not available to you/);
 });
