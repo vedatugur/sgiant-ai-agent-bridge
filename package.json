@@ -1,7 +1,7 @@
 {
   "name": "sgiant-ai-agent-bridge",
-  "version": "1.4.0",
-  "description": "Make any web page AI-operable over postMessage \u2014 same-origin or cross-origin. Framework-agnostic, zero dependencies.",
+  "version": "1.4.1",
+  "description": "Make any web page AI-operable over postMessage — same-origin or cross-origin. Framework-agnostic, zero dependencies.",
   "license": "MIT",
   "keywords": [
     "ai",
