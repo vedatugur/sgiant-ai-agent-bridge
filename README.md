@@ -4,8 +4,8 @@ Make any web page **AI-operable**: let an assistant see the controls on a page
 and drive them — highlight, scroll, focus, fill, click — while the user watches
 each action happen.
 
-Zero dependencies. No React, no framework, ~730 lines of TypeScript. Works
-same-origin or cross-origin.
+Zero dependencies. No React, no framework, ~1,570 lines of TypeScript across
+two entry points. Works same-origin or cross-origin.
 
 ```bash
 npm install sgiant-ai-agent-bridge
@@ -99,6 +99,24 @@ the embedder does not trust the page.
 If your parent is same-origin, you can skip the `postMessage` hop entirely and
 call the DOM primitives directly — `scanAiTargets()`, `runUiControl()`,
 `runOperateAction()`, `clearHighlight()`. They are exported for exactly that.
+
+## Describing a surface (`sgiant-ai-agent-bridge/manifest`)
+
+A second entry point, deliberately separate: a page that only wants to
+DESCRIBE itself has no use for the transport or the postMessage protocol, and
+pulling those in to read a type is how a dependency-light package stops being
+one.
+
+```ts
+import { generateManifest, verifySurface, canAct, hashManifest }
+  from "sgiant-ai-agent-bridge/manifest";
+```
+
+`generateManifest` walks the DOM and produces the manifest a surface
+publishes; `hashManifest` gives it a stable identity; `verifySurface` reports
+drift between a published manifest and the live page; `canAct` answers whether
+a given control may be driven. `sgiant-ai-widget/manifest` re-exports these,
+so a host already loading the widget need not add this dependency.
 
 ## Browsers
 
